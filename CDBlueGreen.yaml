@@ -287,30 +287,6 @@ Resources:
               command: chown -R ubuntu:ubuntu /home/ubuntu
           files:
             #
-            # cfn-hup.conf - for the CloudFormation helper scripts
-            #
-            /etc/cfn/cfn-hup.conf:
-              content: !Sub |
-                [main]
-                stack=${AWS::StackId}
-                region=${AWS::Region}
-              group: root
-              mode: '000400'
-              owner: root
-            #
-            # cfn-auto-reloader.conf - for the CloudFormation helper scripts
-            #
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Sub |
-                [cfn-auto-reloader-hook]
-                triggers=post.update
-                path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
-                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenWorkStation --region ${AWS::Region}
-                runas=root
-              group: root
-              mode: '000400'
-              owner: root
-            #
             # updatedeploymentgroup.sh
             #
             # This script is run after cfn-init to change the settings of the
@@ -469,6 +445,22 @@ Resources:
           pip install awscli
           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+
+          mkdir -p /etc/cfn/hooks.d
+          cat << EOF > /etc/cfn/cfn-hup.conf
+          [main]
+          stack=${AWS::StackId}
+          region=${AWS::Region}
+          EOF
+
+          cat << EOF > /etc/cfn/hooks.d/cfn-auto-reloader.conf
+          [cfn-auto-reloader-hook]
+          triggers=post.update
+          path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
+          action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
+          runas=root
+          EOF
+
           cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenWorkStation
           sudo -u ubuntu aws configure set region ${AWS::Region} 
           sudo -u ubuntu /home/ubuntu/scripts/updatedeploymentgroup.sh
@@ -626,49 +618,6 @@ Resources:
           - ubuntu1
         ubuntu1:
           files:
-            /etc/cfn/cfn-hup.conf:
-              content: !Sub |
-                [main]
-                stack=${AWS::StackId}
-                region=${AWS::Region}
-              group: root
-              mode: '000400'
-              owner: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Sub |
-                [cfn-auto-reloader-hook]
-                triggers=post.update
-                path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
-                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
-                runas=root
-              group: root
-              mode: '000400'
-              owner: root
-            #
-            # codedeployinstall
-            #
-            # This copies the code deploy installation script from the AWS S3 buckets.
-            #
-            /home/ubuntu/codedeployinstall:
-              group: ubuntu
-              mode: '000755'
-              owner: ubuntu
-              source:
-                !Join [ "", [ "http://aws-codedeploy-", !Ref "AWS::Region",".s3.amazonaws.com/latest/install" ] ]
-            #
-            # codedeployinstallpt2
-            #
-            # This actually installs the code deploy agent.  A script is used
-            # because we need ingest a "yes" into the installation process.
-            # This will be run in the command section below.
-            #
-            /home/ubuntu/codedeployinstallpt2:
-              content: !Sub |
-                #!/bin/bash
-                yes|/home/ubuntu/codedeployinstall auto
-              group: ubuntu
-              mode: '000755'
-              owner: ubuntu
             #
             # index.php
             #
@@ -688,21 +637,6 @@ Resources:
               group: ubuntu
               mode: '000755'
               owner: ubuntu
-          commands:
-            ubuntu1cmd1:
-              command: /home/ubuntu/codedeployinstallpt2
-            ubuntu1cmd2:
-              command: rm /var/www/html/index.html
-          packages:
-            apt:
-              apache2: []
-              libapache2-mod-php: []
-              php: []
-          services:
-            sysvinit:
-              httpd:
-                enabled: true
-                ensureRunning: true
     Properties:
       IamInstanceProfile: !Ref BlueGreenInstanceProfile
       ImageId:
@@ -729,6 +663,21 @@ Resources:
           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
           ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
 
+          mkdir -p /etc/cfn/hooks.d
+          cat << EOF > /etc/cfn/cfn-hup.conf
+          [main]
+          stack=${AWS::StackId}
+          region=${AWS::Region}
+          EOF
+
+          cat << EOF > /etc/cfn/hooks.d/cfn-auto-reloader.conf
+          [cfn-auto-reloader-hook]
+          triggers=post.update
+          path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
+          action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
+          runas=root
+          EOF
+
           # Install the version of Ruby currently supported with CodeDeploy agent.
           
           cat << EOF > /etc/apt/sources.list.d/xenial.list
@@ -748,6 +697,18 @@ Resources:
           
           apt -y update
           apt -y install ruby gdebi-core 
+
+          # installs the code deploy agent
+          
+          wget -O /home/ubuntu/codedeployinstall https://aws-codedeploy-${AWS::Region}.s3.amazonaws.com/latest/install
+          chmod +x /home/ubuntu/codedeployinstall
+          /home/ubuntu/codedeployinstall auto
+
+          apt -y install apache2 libapache2-mod-php php
+          chown -R ubuntu:ubuntu /var/www/html/
+          rm /var/www/html/index.html
+          systemctl enable apache2
+          systemctl start apache2
           
           cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
           cfn-hup || error_exit ''Failed to start cfn-hup''
