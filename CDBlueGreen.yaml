@@ -43,13 +43,13 @@ Mappings:
     eu-west-2:
       ubuntu: ami-0b0a60c0a2bd40612
     us-east-1:
-      ubuntu: ami-0ac019f4fcb7cb7e6
+      ubuntu: ami-00ddb0e5626798373
     us-east-2:
-      ubuntu: ami-0f65671a86f061fcd
+      ubuntu: ami-0dd9f0e7df0f0a138
     us-west-1:
-      ubuntu: ami-063aa838bd7631e0b
+      ubuntu: ami-0a741b782c2c8632d
     us-west-2:
-      ubuntu: ami-0bbe6b35405ecebdb
+      ubuntu: ami-0ac73f33a1888c64a
 
 # Offer the IP of the workstation host so the template user can log in.
 
@@ -463,8 +463,8 @@ Resources:
             cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
             exit 1
           }
-          apt-get -y update
-          apt-get -y install python-setuptools python-pip software-properties-common
+          apt -y update
+          apt -y install python-setuptools python-pip software-properties-common
           pip install boto3
           pip install awscli
           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
@@ -722,8 +722,8 @@ Resources:
             cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
             exit 1
           }
-          apt-get -y update
-          apt-get -y install python-setuptools python-pip software-properties-common
+          apt -y update
+          apt -y install python-setuptools python-pip software-properties-common
           pip install boto3
           pip install awscli
           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
@@ -746,8 +746,8 @@ Resources:
           Pin-Priority: 1024
           EOF
           
-          apt-get -y update
-          apt-get -y install ruby gdebi-core 
+          apt -y update
+          apt -y install ruby gdebi-core 
           
           cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
           cfn-hup || error_exit ''Failed to start cfn-hup''
