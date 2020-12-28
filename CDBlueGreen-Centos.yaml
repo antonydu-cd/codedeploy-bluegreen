@@ -473,16 +473,16 @@ Resources:
           #!/bin/bash
           function error_exit
           {
-            cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
             exit 1
           }
           yum -y update
           yum update -y aws-cfn-bootstrap
           yum install -y aws-cli
-          cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenWorkStation
+          /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenWorkStation
           sudo -u ec2-user aws configure set region ${AWS::Region} 
           sudo -u ec2-user /home/ubuntu/scripts/updatedeploymentgroup.sh
-          cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
         Count: '1'
@@ -743,7 +743,7 @@ Resources:
           #!/bin/bash
           function error_exit
           {
-            cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
+            opt/aws/bin/cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
             exit 1
           }
           yum update -y aws-cfn-bootstrap
@@ -755,5 +755,5 @@ Resources:
           yum install -y ruby || error_exit 'Failed to install AWS CodeDeploy Agent.' 
           yum -y install codedeploy-agent.noarch.rpm || error_exit 'Failed to install AWS CodeDeploy Agent.'
           
-          cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
-          cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
+          /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
+          /opt/aws/bin/cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
