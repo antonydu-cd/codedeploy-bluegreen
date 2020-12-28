@@ -19,37 +19,37 @@
 # the CodeDeploy tools to deploy version 2 of the code.
 
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Create the VPC framework for the Ubuntu BlueGreen environment.
+Description: Create the VPC framework for the Centos BlueGreen environment.
 
-# Define the mappings for the Ubuntu 18.04 LTS in the regions that
+# Define the mappings for the Centos in the regions that
 # offer CodeDeploy.
 
 Mappings:
   RegionMap:
     ap-northeast-1:
-      ubuntu: ami-0f2dd5fc989207c82
+      centos: ami-01748a72bed07727c
     ap-northeast-2:
-      ubuntu: ami-0e67aff698cb24c1d
+      centos: ami-0094965d55b3bb1ff
     ap-southeast-1:
-      ubuntu: ami-06fb5332e8e3e577a
+      centos: ami-00b8d9cb8a7161e41
     ap-southeast-2:
-      ubuntu: ami-0987943c813a8426b
+      centos: ami-06ce513624b435a22
     ca-central-1:
-      ubuntu: ami-0e625dfca3e5a33bd
+      centos: ami-0c3e7f50c89a372ae
     eu-central-1:
-      ubuntu: ami-0e1ce3e0deb8896d2
+      centos: ami-03c3a7e4263fd998c
     eu-west-1:
-      ubuntu: ami-0dc8d444ee2a42d8a
+      centos: ami-01720b5f421cf0179
     eu-west-2:
-      ubuntu: ami-0e169fa5b2b2f88ae
+      centos: ami-0e80a462ede03e653
     us-east-1:
-      ubuntu: ami-00ddb0e5626798373
+      centos: ami-0be2609ba883822ec
     us-east-2:
-      ubuntu: ami-0dd9f0e7df0f0a138
+      centos: ami-0a0ad6b70e61be944
     us-west-1:
-      ubuntu: ami-0a741b782c2c8632d
+      centos: ami-03130878b60947df3
     us-west-2:
-      ubuntu: ami-0ac73f33a1888c64a
+      centos: ami-0a36eb8fadc976275
 
 # Offer the IP of the workstation host so the template user can log in.
 
@@ -280,12 +280,33 @@ Resources:
       AWS::CloudFormation::Init:
         configSets:
           default:
-          - ubuntu1
-        ubuntu1:
-          commands:
-            ubuntu1cmd3:
-              command: chown -R ubuntu:ubuntu /home/ubuntu
+          - centos1
+        centos1:
           files:
+            #
+            # cfn-hup.conf - for the CloudFormation helper scripts
+            #
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              group: root
+              mode: '000400'
+              owner: root
+            #
+            # cfn-auto-reloader.conf - for the CloudFormation helper scripts
+            #
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
+                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenWorkStation --region ${AWS::Region}
+                runas=root
+              group: root
+              mode: '000400'
+              owner: root
             #
             # updatedeploymentgroup.sh
             #
@@ -297,7 +318,7 @@ Resources:
             # to update it to BlueGreen.  This allows CloudFormation to delete
             # the deployment group when the stack is deleted.
             #
-            /home/ubuntu/scripts/updatedeploymentgroup.sh:
+            /home/ec2-user/scripts/updatedeploymentgroup.sh:
               content: !Sub |
                 #!/bin/bash
                 DeployType="BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL"
@@ -313,16 +334,16 @@ Resources:
                 --load-balancer-info elbInfoList=[{name="${BlueGreenLB}"}] \
                 --deployment-style "deploymentType=$DeployType" \
                 --blue-green-deployment-configuration "$BlueGreenConf" >/dev/null
-              group: ubuntu
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
+              owner: ec2-user
             #
             # appspec.yml
             #
             # This file is used to tell CodeDeploy how to deploy the new
             # version
             #
-            /home/ubuntu/newversion/appspec.yml:
+            /home/ec2-user/newversion/appspec.yml:
               content: !Sub |
                 version: 0.0
                 os: linux
@@ -331,16 +352,16 @@ Resources:
                     destination: /var/www/html
                 permissions:
                   - object: /var/www/html/index.php
-                    owner: ubuntu
-                    group: ubuntu
+                    owner: ec2-user
+                    group: ec2-user
                     mode: 644
                 hooks:
                   BeforeInstall:
                     - location: scripts/beforeinstall.sh
                       timeout: 180
-              group: ubuntu
+              group: ec2-user
               mode: '000644'
-              owner: ubuntu
+              owner: ec2-user
             #
             # index.php - Version 2 of the CodeDeploy application
             #
@@ -348,7 +369,7 @@ Resources:
             # code deploy.  It's just a PHP app that displays "Version 2"
             # along with the private IP and instance ID of the instance.
             #
-            /home/ubuntu/newversion/content/index.php:
+            /home/ec2-user/newversion/content/index.php:
               content: !Sub |
                 <?php
                 $i_id = file_get_contents("http://instance-data/latest/meta-data/instance-id");
@@ -357,9 +378,9 @@ Resources:
                 echo "<h1>instance-id: ", $i_id, "</h1>";
                 echo "<h1>local-ipv4: ", $i_ipv4, "</h1>";
                 ?>
-              group: ubuntu
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
+              owner: ec2-user
             #
             # beforeinstall.sh - CodeDeploy BeforeInstall hook file
             #
@@ -367,14 +388,14 @@ Resources:
             # It removes the existing version of the index.php file since
             # CodeDeploy will not overwrite existing files.
             #
-            /home/ubuntu/newversion/scripts/beforeinstall.sh:
+            /home/ec2-user/newversion/scripts/beforeinstall.sh:
               content: !Sub |
                 #!/bin/bash
                 rm -f /var/www/html/index.php
-              group: ubuntu
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
-            /home/ubuntu/scripts/pushnewversion.sh:
+              owner: ec2-user
+            /home/ec2-user/scripts/pushnewversion.sh:
               content: !Sub |
                 #!/bin/bash
                 aws deploy push \
@@ -382,10 +403,10 @@ Resources:
                   --description "new version" \
                   --ignore-hidden-files \
                   --s3-location s3://${BlueGreenBucket}/newversion.zip \
-                  --source /home/ubuntu/newversion
-              group: ubuntu
+                  --source /home/ec2-user/newversion
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
+              owner: ec2-user
             #
             # cleanup.sh
             #
@@ -396,7 +417,7 @@ Resources:
             # get manually deleted, CloudFormation cannot remove the
             # entire stack.
             #
-            /home/ubuntu/scripts/cleanup.sh:
+            /home/ec2-user/scripts/cleanup.sh:
               content: !Sub |
                 #!/bin/bash
                 echo Removing deployment bundle from S3...
@@ -411,9 +432,25 @@ Resources:
                 xargs -n1 aws autoscaling delete-auto-scaling-group \
                 --force-delete \
                 --auto-scaling-group-name
-              group: ubuntu
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
+              owner: ec2-user
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - /etc/cfn/cfn-hup.conf
+                - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+              awslogs:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - /etc/awslogs/awslogs.conf
+                packages:
+                  yum:
+                  - awslogs
     Properties: 
       AvailabilityZone: !Ref AZName
       IamInstanceProfile: !Ref BlueGreenWorkStationProfile
@@ -421,7 +458,7 @@ Resources:
         Fn::FindInMap:
         - RegionMap
         - Ref: AWS::Region
-        - ubuntu
+        - centos
       InstanceType: t2.micro
       KeyName: !Ref BlueGreenKeyPairName
       SecurityGroupIds: 
@@ -439,32 +476,12 @@ Resources:
             cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
             exit 1
           }
-          apt -y update
-          apt -y install python-setuptools python-pip software-properties-common
-          pip install boto3
-          pip install awscli
-          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
-          ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
-
-          mkdir -p /etc/cfn/hooks.d
-          cat << EOF > /etc/cfn/cfn-hup.conf
-          [main]
-          stack=${AWS::StackId}
-          region=${AWS::Region}
-          EOF
-
-          cat << EOF > /etc/cfn/hooks.d/cfn-auto-reloader.conf
-          [cfn-auto-reloader-hook]
-          triggers=post.update
-          path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
-          action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
-          runas=root
-          EOF
-
+          yum -y update
+          yum update -y aws-cfn-bootstrap
+          yum install -y aws-cli
           cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenWorkStation
-          sudo -u ubuntu aws configure set region ${AWS::Region} 
-          sudo -u ubuntu /home/ubuntu/scripts/updatedeploymentgroup.sh
-          cfn-hup || error_exit ''Failed to start cfn-hup''
+          sudo -u ec2-user aws configure set region ${AWS::Region} 
+          sudo -u ec2-user /home/ubuntu/scripts/updatedeploymentgroup.sh
           cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
@@ -615,9 +632,52 @@ Resources:
       AWS::CloudFormation::Init:
         configSets:
           default:
-          - ubuntu1
-        ubuntu1:
+          - centos1
+        centos1:
           files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              group: root
+              mode: '000400'
+              owner: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
+                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
+                runas=root
+              group: root
+              mode: '000400'
+              owner: root
+            #
+            # codedeployinstall
+            #
+            # This copies the code deploy installation script from the AWS S3 buckets.
+            #
+            /home/ec2-user/codedeployinstall:
+              group: ec2-user
+              mode: '000755'
+              owner: ec2-user
+              source:
+                !Join [ "", [ "http://aws-codedeploy-", !Ref "AWS::Region",".s3.amazonaws.com/latest/install" ] ]
+            #
+            # codedeployinstallpt2
+            #
+            # This actually installs the code deploy agent.  A script is used
+            # because we need ingest a "yes" into the installation process.
+            # This will be run in the command section below.
+            #
+            /home/ec2-user/codedeployinstallpt2:
+              content: !Sub |
+                #!/bin/bash
+                yes|/home/ec2-user/codedeployinstall auto
+              group: ec2-user
+              mode: '000755'
+              owner: ec2-user
             #
             # index.php
             #
@@ -634,16 +694,46 @@ Resources:
                 echo "<h1>instance-id: ", $i_id, "</h1>";
                 echo "<h1>local-ipv4: ", $i_ipv4, "</h1>";
                 ?>
-              group: ubuntu
+              group: ec2-user
               mode: '000755'
-              owner: ubuntu
+              owner: ec2-user
+          commands:
+            centoscmd1:
+              command: /home/ec2-user/codedeployinstallpt2
+          packages:
+            yum:
+              nginx: []
+          services:
+            sysvinit:
+              codedeploy-agent:
+                enabled: 'true'
+                ensureRunning: 'true'
+              nginx:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/nginx/nginx.conf
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - /etc/cfn/cfn-hup.conf
+                - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+              awslogs:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - /etc/awslogs/awslogs.conf
+                packages:
+                  yum:
+                  - awslogs
     Properties:
       IamInstanceProfile: !Ref BlueGreenInstanceProfile
       ImageId:
         Fn::FindInMap:
         - RegionMap
         - Ref: AWS::Region
-        - ubuntu
+        - centos
       InstanceType: t2.micro
       KeyName: !Ref BlueGreenKeyPairName
       SecurityGroups:
@@ -656,60 +746,14 @@ Resources:
             cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
             exit 1
           }
-          apt -y update
-          apt -y install python-setuptools python-pip software-properties-common
-          pip install boto3
-          pip install awscli
-          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
-          ln -s /root/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+          yum update -y aws-cfn-bootstrap
+          yum install -y aws-cli
 
-          mkdir -p /etc/cfn/hooks.d
-          cat << EOF > /etc/cfn/cfn-hup.conf
-          [main]
-          stack=${AWS::StackId}
-          region=${AWS::Region}
-          EOF
-
-          cat << EOF > /etc/cfn/hooks.d/cfn-auto-reloader.conf
-          [cfn-auto-reloader-hook]
-          triggers=post.update
-          path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
-          action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
-          runas=root
-          EOF
-
-          # Install the version of Ruby currently supported with CodeDeploy agent.
-          
-          cat << EOF > /etc/apt/sources.list.d/xenial.list
-          deb http://archive.ubuntu.com/ubuntu/ xenial main
-          deb http://archive.ubuntu.com/ubuntu/ xenial-updates main
-          EOF
-          
-          cat << EOF > /etc/apt/preferences.d/ruby-xenial
-          Package: ruby
-          Pin: release v=16.04, l=Ubuntu
-          Pin-Priority: 1024
-          
-          Package: rake
-          Pin: release v=16.04, l=Ubuntu
-          Pin-Priority: 1024
-          EOF
-          
-          apt -y update
-          apt -y install ruby gdebi-core 
-
-          # installs the code deploy agent
-          
-          wget -O /home/ubuntu/codedeployinstall https://aws-codedeploy-${AWS::Region}.s3.amazonaws.com/latest/install
-          chmod +x /home/ubuntu/codedeployinstall
-          /home/ubuntu/codedeployinstall auto
-
-          apt -y install apache2 libapache2-mod-php php
-          chown -R ubuntu:ubuntu /var/www/html/
-          rm /var/www/html/index.html
-          systemctl enable apache2
-          systemctl start apache2
+          # Install the AWS CodeDeploy Agent.
+          cd /home/ec2-user/
+          aws s3 cp s3://aws-codedeploy-${AWS::Region}/latest/codedeploy-agent.noarch.rpm . || error_exit 'Failed to download AWS CodeDeploy Agent.'
+          yum install -y ruby || error_exit 'Failed to install AWS CodeDeploy Agent.' 
+          yum -y install codedeploy-agent.noarch.rpm || error_exit 'Failed to install AWS CodeDeploy Agent.'
           
           cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
-          cfn-hup || error_exit ''Failed to start cfn-hup''
           cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
