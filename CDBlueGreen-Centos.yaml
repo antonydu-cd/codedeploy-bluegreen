@@ -480,8 +480,8 @@ Resources:
           yum update -y aws-cfn-bootstrap
           yum install -y aws-cli
           /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenWorkStation
-          sudo -u ec2-user aws configure set region ${AWS::Region} 
-          sudo -u ec2-user /home/ubuntu/scripts/updatedeploymentgroup.sh
+          sudo -u ec2-user aws configure set region ${AWS::Region}
+          sudo -u ec2-user /home/ec2-user/scripts/updatedeploymentgroup.sh
           /opt/aws/bin/cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenWorkStation --region ${AWS::Region}
     CreationPolicy:
       ResourceSignal:
@@ -635,56 +635,6 @@ Resources:
           - centos1
         centos1:
           files:
-            /etc/cfn/cfn-hup.conf:
-              content: !Sub |
-                [main]
-                stack=${AWS::StackId}
-                region=${AWS::Region}
-              group: root
-              mode: '000400'
-              owner: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Sub |
-                [cfn-auto-reloader-hook]
-                triggers=post.update
-                path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
-                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
-                runas=root
-              group: root
-              mode: '000400'
-              owner: root
-            #
-            # codedeployinstall
-            #
-            # This copies the code deploy installation script from the AWS S3 buckets.
-            #
-            /home/ec2-user/codedeployinstall:
-              group: ec2-user
-              mode: '000755'
-              owner: ec2-user
-              source:
-                !Join [ "", [ "http://aws-codedeploy-", !Ref "AWS::Region",".s3.amazonaws.com/latest/install" ] ]
-            #
-            # codedeployinstallpt2
-            #
-            # This actually installs the code deploy agent.  A script is used
-            # because we need ingest a "yes" into the installation process.
-            # This will be run in the command section below.
-            #
-            /home/ec2-user/codedeployinstallpt2:
-              content: !Sub |
-                #!/bin/bash
-                yes|/home/ec2-user/codedeployinstall auto
-              group: ec2-user
-              mode: '000755'
-              owner: ec2-user
-            #
-            # index.php
-            #
-            # This is the first version of the application.  It displays
-            # "version 1" along with the instance id and the private IP
-            # of the instance from the EC2 metadata.
-            #
             /var/www/html/index.php:
               content: !Sub |
                 <?php
@@ -697,36 +647,16 @@ Resources:
               group: ec2-user
               mode: '000755'
               owner: ec2-user
-          commands:
-            centoscmd1:
-              command: /home/ec2-user/codedeployinstallpt2
           packages:
             yum:
               nginx: []
           services:
             sysvinit:
-              codedeploy-agent:
-                enabled: 'true'
-                ensureRunning: 'true'
               nginx:
                 enabled: 'true'
                 ensureRunning: 'true'
                 files:
                   - /etc/nginx/nginx.conf
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                - /etc/cfn/cfn-hup.conf
-                - /etc/cfn/hooks.d/cfn-auto-reloader.conf
-              awslogs:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                - /etc/awslogs/awslogs.conf
-                packages:
-                  yum:
-                  - awslogs
     Properties:
       IamInstanceProfile: !Ref BlueGreenInstanceProfile
       ImageId:
@@ -749,11 +679,54 @@ Resources:
           yum update -y aws-cfn-bootstrap
           yum install -y aws-cli
 
+          mkdir -p /etc/cfn/hooks.d
+          cat << EOF > /etc/cfn/cfn-hup.conf
+          [main]
+          stack=${AWS::StackId}
+          region=${AWS::Region}
+          EOF
+
+          cat << EOF > /etc/cfn/hooks.d/cfn-auto-reloader.conf
+          [cfn-auto-reloader-hook]
+          triggers=post.update
+          path=Resources.BlueGreenLaunchConfig.Metadata.AWS::CloudFormation::Init
+          action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r BlueGreenLaunchConfig --region ${AWS::Region}
+          runas=root
+          EOF
+
+          mkdir -p /var/www/html/
+          chown ec2-user:ec2-user /var/www/html/
+
           # Install the AWS CodeDeploy Agent.
           cd /home/ec2-user/
           aws s3 cp s3://aws-codedeploy-${AWS::Region}/latest/codedeploy-agent.noarch.rpm . || error_exit 'Failed to download AWS CodeDeploy Agent.'
           yum install -y ruby || error_exit 'Failed to install AWS CodeDeploy Agent.' 
-          yum -y install codedeploy-agent.noarch.rpm || error_exit 'Failed to install AWS CodeDeploy Agent.'
+          yum install -y codedeploy-agent.noarch.rpm || error_exit 'Failed to install AWS CodeDeploy Agent.'
+
+          # Install nginx
+          amazon-linux-extras install -y nginx1
+          sed -i 's/usr\/share\/nginx\/html/var\/www\/html/g' /etc/nginx/nginx.conf
+          sudo sed -i 's/user nginx/user ec2-user/g' /etc/nginx/nginx.conf
+          systemctl enable nginx
+          systemctl start nginx
+
+          # Install php
+          amazon-linux-extras enable php7.4
+          yum -y install php-cli php-pdo php-fpm php-json php-mysqlnd
+          yum -y install php-opcache php-xml php-gd php-devel php-intl php-mbstring php-bcmath php-json php-iconv php-soap
+          sed -i 's/memory_limit = 128M/memory_limit = -1/g' /etc/php.ini
+          sed -i 's/user = apache/user = ec2-user/g' /etc/php-fpm.d/www.conf
+          sed -i 's/group = apache/group = ec2-user/g' /etc/php-fpm.d/www.conf
+          sed -i 's/;listen.owner = nobody/listen.owner = ec2-user/g' /etc/php-fpm.d/www.conf
+          sed -i 's/;listen.group = nobody/listen.group = ec2-user/g' /etc/php-fpm.d/www.conf
+          sed -i 's/;listen.mode = 0660/listen.mode = 0660/g' /etc/php-fpm.d/www.conf
+          sed -i 's/;listen.mode = 0660/listen.mode = 0660/g' /etc/php-fpm.d/www.conf
+          sed -i 's/listen.acl_users/;listen.acl_users/g' /etc/php-fpm.d/www.conf
+          sed -i 's/php-fpm/unix:\/run\/php-fpm\/www.sock/g' /etc/nginx/default.d/php.conf
+          systemctl enable php-fpm
+          systemctl start php-fpm
+          
           
           /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
+          /opt/aws/bin/cfn-hup || error_exit ''Failed to start cfn-hup''
           /opt/aws/bin/cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
