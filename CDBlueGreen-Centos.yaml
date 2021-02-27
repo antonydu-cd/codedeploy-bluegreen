@@ -83,9 +83,13 @@ Parameters:
     MaxLength: 15
     MinLength: 2
     Type: String
-  ProjectReleaseMedia:
+  ProjectBucketName:
     Default: ''
-    Description: Amazon S3 path to download project .zip file (s3://centos-bluegreenbucket/newversion.zip)
+    Description: Amazon S3 Bucket Name to download project .zip file (centos-bluegreenbucket)
+    Type: String
+  ProjectReleaseFileName:
+    Default: ''
+    Description: Project Release file to download .zip file (newversion.zip)
     Type: String
 
 Resources:
@@ -338,8 +342,12 @@ Resources:
                   --application-name ${BlueGreenApp} \
                   --description "new version" \
                   --ignore-hidden-files \
-                  --s3-location ${ProjectReleaseMedia} \
+                  --s3-location s3://${ProjectBucketName}/${ProjectReleaseFileName} \
                   --source /home/ec2-user/newversion
+                aws deploy create-deployment \
+                  --application-name ${BlueGreenApp} \
+                  --s3-location bucket=${ProjectBucketName},key=${ProjectReleaseFileName},bundleType=zip \
+                  --deployment-group-name ${BlueGreenDG}
               group: ec2-user
               mode: '000755'
               owner: ec2-user
@@ -357,7 +365,7 @@ Resources:
               content: !Sub |
                 #!/bin/bash
                 echo Removing deployment bundle from S3...
-                aws s3 rm ${ProjectReleaseMedia}
+                aws s3 rm s3://${ProjectBucketName}/${ProjectReleaseFileName}
                 echo Removing additional autoscaling group...
                 aws autoscaling describe-auto-scaling-groups \
                 --query \
@@ -620,7 +628,7 @@ Resources:
 
           # add document root
           mkdir -p /var/www/
-          aws s3 cp ${ProjectReleaseMedia} /var/www || error_exit 'Failed to download Project Release Media.'
+          aws s3 cp s3://${ProjectBucketName}/${ProjectReleaseFileName} /var/www || error_exit 'Failed to download Project Release Media.'
           unzip -q /var/www/newversion.zip -d /var/www/
           rm -fr /var/www/html && mv /var/www/content /var/www/html
           chown -R ec2-user:ec2-user /var/www/
