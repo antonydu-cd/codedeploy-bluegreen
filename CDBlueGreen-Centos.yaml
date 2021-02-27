@@ -83,6 +83,10 @@ Parameters:
     MaxLength: 15
     MinLength: 2
     Type: String
+  ProjectReleaseMedia:
+    Default: ''
+    Description: Amazon S3 path to download project .zip file (s3://centos-bluegreenbucket/newversion.zip)
+    Type: String
 
 Resources:
 
@@ -181,16 +185,6 @@ Resources:
       ApplicationName: !Ref BlueGreenApp
       DeploymentGroupName: !Join ["", [ Ref: NamePrefix, "-dg"] ]
       ServiceRoleArn: !GetAtt BlueGreenDeployRole.Arn
-
-  # BlueGreenBucket - an S3 bucket that will be used for CodeDeploy revisions
-
-  BlueGreenBucket:
-    Type: AWS::S3::Bucket
-    Properties: 
-      Tags:
-      - Key: Name
-        Value:
-          !Join ["", [ Ref: NamePrefix, "-deploy-bucket"] ]
 
   # BlueGreenWorkStationRole - The instance role for the workstation host
   #
@@ -337,64 +331,6 @@ Resources:
               group: ec2-user
               mode: '000755'
               owner: ec2-user
-            #
-            # appspec.yml
-            #
-            # This file is used to tell CodeDeploy how to deploy the new
-            # version
-            #
-            /home/ec2-user/newversion/appspec.yml:
-              content: !Sub |
-                version: 0.0
-                os: linux
-                files:
-                  - source: content/index.php
-                    destination: /var/www/html
-                permissions:
-                  - object: /var/www/html/index.php
-                    owner: ec2-user
-                    group: ec2-user
-                    mode: 644
-                hooks:
-                  BeforeInstall:
-                    - location: scripts/beforeinstall.sh
-                      timeout: 180
-              group: ec2-user
-              mode: '000644'
-              owner: ec2-user
-            #
-            # index.php - Version 2 of the CodeDeploy application
-            #
-            # This is the new version of the app that we will deploy using
-            # code deploy.  It's just a PHP app that displays "Version 2"
-            # along with the private IP and instance ID of the instance.
-            #
-            /home/ec2-user/newversion/content/index.php:
-              content: !Sub |
-                <?php
-                $i_id = file_get_contents("http://instance-data/latest/meta-data/instance-id");
-                $i_ipv4 = file_get_contents("http://instance-data/latest/meta-data/local-ipv4");
-                echo "<h1>application version: 2</h1>";
-                echo "<h1>instance-id: ", $i_id, "</h1>";
-                echo "<h1>local-ipv4: ", $i_ipv4, "</h1>";
-                ?>
-              group: ec2-user
-              mode: '000755'
-              owner: ec2-user
-            #
-            # beforeinstall.sh - CodeDeploy BeforeInstall hook file
-            #
-            # This will be called by CodeDeploy during the BeforeInstall phase.
-            # It removes the existing version of the index.php file since
-            # CodeDeploy will not overwrite existing files.
-            #
-            /home/ec2-user/newversion/scripts/beforeinstall.sh:
-              content: !Sub |
-                #!/bin/bash
-                rm -f /var/www/html/index.php
-              group: ec2-user
-              mode: '000755'
-              owner: ec2-user
             /home/ec2-user/scripts/pushnewversion.sh:
               content: !Sub |
                 #!/bin/bash
@@ -402,7 +338,7 @@ Resources:
                   --application-name ${BlueGreenApp} \
                   --description "new version" \
                   --ignore-hidden-files \
-                  --s3-location s3://${BlueGreenBucket}/newversion.zip \
+                  --s3-location ${ProjectReleaseMedia} \
                   --source /home/ec2-user/newversion
               group: ec2-user
               mode: '000755'
@@ -421,7 +357,7 @@ Resources:
               content: !Sub |
                 #!/bin/bash
                 echo Removing deployment bundle from S3...
-                aws s3 rm s3://${BlueGreenBucket}/newversion.zip
+                aws s3 rm ${ProjectReleaseMedia}
                 echo Removing additional autoscaling group...
                 aws autoscaling describe-auto-scaling-groups \
                 --query \
@@ -634,19 +570,6 @@ Resources:
           default:
           - centos1
         centos1:
-          files:
-            /var/www/html/index.php:
-              content: !Sub |
-                <?php
-                $i_id = file_get_contents("http://instance-data/latest/meta-data/instance-id");
-                $i_ipv4 = file_get_contents("http://instance-data/latest/meta-data/local-ipv4");
-                echo "<h1>application version: 1</h1>";
-                echo "<h1>instance-id: ", $i_id, "</h1>";
-                echo "<h1>local-ipv4: ", $i_ipv4, "</h1>";
-                ?>
-              group: ec2-user
-              mode: '000755'
-              owner: ec2-user
           packages:
             yum:
               nginx: []
@@ -676,6 +599,7 @@ Resources:
             opt/aws/bin/cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource BlueGreenASG --region ${AWS::Region}
             exit 1
           }
+          yum update -y
           yum update -y aws-cfn-bootstrap
           yum install -y aws-cli
 
@@ -694,8 +618,12 @@ Resources:
           runas=root
           EOF
 
-          mkdir -p /var/www/html/
-          chown ec2-user:ec2-user /var/www/html/
+          # add document root
+          mkdir -p /var/www/
+          aws s3 cp ${ProjectReleaseMedia} /var/www || error_exit 'Failed to download Project Release Media.'
+          unzip -q /var/www/newversion.zip -d /var/www/
+          rm -fr /var/www/html && mv /var/www/content /var/www/html
+          chown -R ec2-user:ec2-user /var/www/
 
           # Install the AWS CodeDeploy Agent.
           cd /home/ec2-user/
@@ -725,7 +653,6 @@ Resources:
           sed -i 's/php-fpm/unix:\/run\/php-fpm\/www.sock/g' /etc/nginx/default.d/php.conf
           systemctl enable php-fpm
           systemctl start php-fpm
-          
           
           /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
           /opt/aws/bin/cfn-hup || error_exit ''Failed to start cfn-hup''
