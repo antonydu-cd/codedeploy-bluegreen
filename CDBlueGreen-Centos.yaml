@@ -319,19 +319,14 @@ Resources:
             /home/ec2-user/scripts/updatedeploymentgroup.sh:
               content: !Sub |
                 #!/bin/bash
-                DeployType="BLUE_GREEN,deploymentOption=WITH_TRAFFIC_CONTROL"
-                BlueGreenConf=\
-                "terminateBlueInstancesOnDeploymentSuccess={action=KEEP_ALIVE}"\
-                ",deploymentReadyOption={actionOnTimeout=CONTINUE_DEPLOYMENT}"\
-                ",greenFleetProvisioningOption={action=COPY_AUTO_SCALING_GROUP}"
                 aws deploy update-deployment-group \
                 --application-name "${BlueGreenApp}" \
                 --current-deployment-group-name "${BlueGreenDG}" \
                 --service-role-arn "${BlueGreenDeployRole.Arn}" \
                 --auto-scaling-groups "${BlueGreenASG}" \
                 --load-balancer-info elbInfoList=[{name="${BlueGreenLB}"}] \
-                --deployment-style "deploymentType=$DeployType" \
-                --blue-green-deployment-configuration "$BlueGreenConf" >/dev/null
+                --deployment-style "deploymentType=IN_PLACE,deploymentOption=WITH_TRAFFIC_CONTROL" \
+                --deployment-config-name CodeDeployDefault.AllAtOnce >/dev/null
               group: ec2-user
               mode: '000755'
               owner: ec2-user
