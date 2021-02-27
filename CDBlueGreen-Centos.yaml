@@ -631,13 +631,6 @@ Resources:
           yum install -y ruby || error_exit 'Failed to install AWS CodeDeploy Agent.' 
           yum install -y codedeploy-agent.noarch.rpm || error_exit 'Failed to install AWS CodeDeploy Agent.'
 
-          # Install nginx
-          amazon-linux-extras install -y nginx1
-          sed -i 's/usr\/share\/nginx\/html/var\/www\/html/g' /etc/nginx/nginx.conf
-          sudo sed -i 's/user nginx/user ec2-user/g' /etc/nginx/nginx.conf
-          systemctl enable nginx
-          systemctl start nginx
-
           # Install php
           amazon-linux-extras enable php7.4
           yum -y install php-cli php-pdo php-fpm php-json php-mysqlnd
@@ -653,6 +646,13 @@ Resources:
           sed -i 's/php-fpm/unix:\/run\/php-fpm\/www.sock/g' /etc/nginx/default.d/php.conf
           systemctl enable php-fpm
           systemctl start php-fpm
+
+          # Install nginx
+          amazon-linux-extras install -y nginx1
+          sed -i 's/usr\/share\/nginx\/html/var\/www\/html/g' /etc/nginx/nginx.conf
+          sudo sed -i 's/user nginx/user ec2-user/g' /etc/nginx/nginx.conf
+          systemctl enable nginx
+          systemctl start nginx
           
           /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r BlueGreenLaunchConfig
           /opt/aws/bin/cfn-hup || error_exit ''Failed to start cfn-hup''

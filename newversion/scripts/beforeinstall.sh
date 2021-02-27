@@ -1,2 +1,2 @@
 #!/bin/bash
-rm -f /var/www/html/index.php
+rm -rf /var/www/html
